@@ -1,7 +1,7 @@
 """Reconstruct TSE order books from the per-stock .jsonl files written by flex.py.
 
-The default cutoff is immediately before 15:30 JST. An earlier cutoff can be supplied. For example, 14:17 preserves the book
-immediately before 14:17:00 JST.
+The default cutoff is immediately before 15:30 JST. An earlier cutoff can be
+supplied, including microseconds, for example 14:17:00.123456.
 
 Each stock produces compressed order-level and price-level CSV files,
 plus metadata for the separate closing-auction calculator.
@@ -116,7 +116,8 @@ def reconstruct_stock(
     """Replay one stock until the exclusive exchange-time cutoff.
 
     Continuation packets can omit the T tag. They inherit the exchange
-    time established by the latest T tag in this stock's stream.
+    second established by the latest T tag in this stock's stream. Each
+    event's microseconds are added before checking the cutoff.
     """
     stock = source.name.split(".")[0]
     orders: dict[int, Order] = {}
@@ -234,8 +235,28 @@ def reconstruct_stock(
 
                     current_time = new_time
 
-                # Preserve the position of the last applied event.
-                # The T tag at or beyond the cutoff is excluded.
+                if current_time is None:
+                    raise ValueError(
+                        "Order event arrived before exchange time"
+                    )
+
+                event_time = current_time
+                if tag_type in {"A", "D", "E", "C", "O", "K"}:
+                    microseconds = record.get("tag_time_raw")
+                    if microseconds is None:
+                        # Older JSONL files retain O/K times only in tag_hex.
+                        raw_tag = bytes.fromhex(record["tag_hex"])
+                        if len(raw_tag) < 5:
+                            raise ValueError("Tag is missing its timestamp")
+                        microseconds = int.from_bytes(raw_tag[1:5], "big")
+                    if not isinstance(microseconds, int) or not 0 <= microseconds < 1_000_000:
+                        raise ValueError("Invalid tag microseconds")
+                    event_time = current_time.replace(microsecond=microseconds)
+                    if event_time >= cutoff:
+                        reached_cutoff = True
+                        break
+
+                # Exclude the event at the cutoff from the saved cursor too.
                 last_cursor = (
                     record["sequence_number"],
                     record["tag_index"],
@@ -243,11 +264,6 @@ def reconstruct_stock(
 
                 if tag_type == "T":
                     continue
-
-                if current_time is None:
-                    raise ValueError(
-                        "Order event arrived before exchange time"
-                    )
 
                 if tag_type == "A":
                     order_id = record["order_id"]
@@ -281,7 +297,7 @@ def reconstruct_stock(
                         price_units=price,
                         quantity=quantity,
                         condition=condition,
-                        session=session_at(current_time),
+                        session=session_at(event_time),
                     )
 
                 elif tag_type == "D":
@@ -319,7 +335,7 @@ def reconstruct_stock(
                             order, quantity=remaining
                         )
 
-                    opened_sessions.add(session_at(current_time))
+                    opened_sessions.add(session_at(event_time))
 
                     if tag_type == "C":
                         last_execution = record["execution_price_units"]
@@ -336,7 +352,7 @@ def reconstruct_stock(
                     if 0 < price < MARKET_PRICE_RAW:
                         reference = price
 
-                    clock = current_time.time()
+                    clock = event_time.time()
 
                     if clock < MORNING_OPEN and daily_base is None:
                         daily_base = reference
@@ -479,7 +495,7 @@ def write_snapshot(
         metadata = {
             "stock": snapshot.stock,
             "cutoff_exclusive_jst": snapshot.cutoff.isoformat(),
-            "time_precision": "one exchange second",
+            "time_precision": "one exchange microsecond",
             "price_scale": PRICE_SCALE,
             "live_order_count": len(snapshot.orders),
             "opened_sessions": sorted(snapshot.opened_sessions),
@@ -541,9 +557,9 @@ def find_sources(
 def parse_cutoff(value: str) -> time:
     cutoff = time.fromisoformat(value)
 
-    if cutoff.tzinfo is not None or cutoff.microsecond:
+    if cutoff.tzinfo is not None:
         raise argparse.ArgumentTypeError(
-            "Use a whole-second JST time"
+            "Use a JST time without a timezone, e.g. 14:17:00.123456"
         )
 
     if not time(8) <= cutoff <= AFTERNOON_CLOSE:
@@ -576,7 +592,7 @@ def main() -> None:
         "--time",
         type=parse_cutoff,
         default=AFTERNOON_CLOSE,
-        help="Exclusive JST cutoff, default 15:30:00",
+        help="Exclusive JST cutoff, e.g. 14:17:00.123456; default 15:30:00",
     )
     args = parser.parse_args()
 
