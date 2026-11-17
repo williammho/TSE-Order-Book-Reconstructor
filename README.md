@@ -81,29 +81,7 @@ If multiple prices satisfy these conditions, TSE executes at the price that is c
 
 If no price can satisfy the ordinary Itayose requirements, TSE can execute using either **Special execution** or **Stop allocation at the daily limit**. The following flowcharts depicts how the execution method is decided. Note that if requirements for all 3 are unsatisfied, no Itayose auction execution occurs. 
 
-```mermaid
-flowchart TD
-    book["Book immediately before 15:30 JST"] --> candidate{"Any ordinary<br/>Itayose candidates?"}
-    candidate -->|Yes| select["Select the only candidate or<br/>the closest to the tie reference"]
-    select --> band{"Selected price inside<br/>the closing band?"}
-    band -->|Yes| ordinary["Ordinary Itayose<br/>at the selected price"]
-    band -->|No| side["Above band or excess market buys → upper limits<br/>Below band or excess market sells → lower limits"]
-    candidate -->|No| imbalance{"Do market orders on one side<br/>exceed all opposing volume?"}
-    imbalance -->|Yes| side
-    imbalance -->|No| none["No auction execution"]
-    side --> daily{"Daily limit on that side<br/>inside the closing auction band?"}
-    daily -->|Yes| stopCheck{"At least one unit can match<br/>at the daily limit?"}
-    stopCheck -->|Yes| stop["Stop allocation<br/>at the daily limit"]
-    stopCheck -->|No| none
-    daily -->|No| specialCheck{"Closing band edge within the daily limits?"}
-    specialCheck -->|No| none
-    specialCheck -->|Yes| match{"At least one unit can match<br/>at the band edge?"}
-    match -->|Yes| special["Special Execution<br/>at the closing-band edge"]
-    match -->|No| none
-
-    classDef outcome fill:#115e59,stroke:#14b8a6,stroke-width:3px,color:#fff,font-weight:bold;
-    class ordinary,stop,special,none outcome;
-```
+![Itayose decision tree](docs/itayose-decision-tree.svg)
 
 For either fallback, eligible volume includes market orders and limit orders at the tested price or better. Matched volume is calculated as **min(eligible buy orders, eligible sell orders)**.
 
