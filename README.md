@@ -44,9 +44,10 @@ python orderbook.py "$TSE_DATA/events" "$TSE_DATA/toyota_snapshot" \
   --stock 7203 --time 14:17:00.123456
 ```
 
-Times are exchange timestamps in Japan Standard Time (JST). A snapshot includes events strictly before the requested time. The replay window shows the best 10 price levels per side by default, with cumulative depth alongside the ladder. Use `--levels` to change how many levels are shown.
+The replay window shows the best 10 price levels per side by default, with cumulative depth on the left. Use `--levels` to change how many price levels are shown.
 
-The snapshot export writes `orders.csv.gz` for individual orders, `depth.csv.gz` for aggregated quantities and order counts at each price, and `metadata.json` for the cutoff and reference prices.
+![Toyota (7203) order book replay at 2x speed](docs/orderbook-replay.gif)
+
 
 ### 3. Calculate the closing auction
 
