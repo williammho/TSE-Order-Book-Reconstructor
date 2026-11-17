@@ -1,4 +1,6 @@
-"""Load a TSE FLEX capture, predict auction prices, or replay a stock."""
+"""Main driver to easily use different functionalities: 
+1. predict Itayose closing price for all stocks 
+2. Replay orderbook for any stock for any timeframe"""
 
 import argparse
 import gzip
