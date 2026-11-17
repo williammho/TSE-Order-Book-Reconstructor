@@ -7,6 +7,7 @@ from ipaddress import IPv4Address
 from pathlib import Path
 import shutil
 import subprocess
+from tqdm import tqdm
 
 
 PACKET_FIELDS = (
@@ -37,7 +38,7 @@ def export_udp_tsv(
         "-T", "fields",
         "-E", "header=y", #include header
         "-E", "separator=/t", #separate with tab
-        "-E", "occurrence=f", #take first occurence if multiple exis 
+        "-E", "occurrence=f", #take first occurence if multiple exist
     ]
 
     if max_frames is not None:
@@ -48,8 +49,25 @@ def export_udp_tsv(
 
     output_file = output.open("xb")
     try:
-        with output_file:
-            subprocess.run(command, stdout=output_file, check=True)
+        #additional feature to enable tqdm 
+        with output_file, subprocess.Popen(command, stdout=subprocess.PIPE) as process:
+            try:
+                stream = process.stdout
+                assert stream is not None
+                output_file.write(stream.readline())
+
+                with tqdm(desc="Exporting UDP frames", unit="frame", unit_scale=True) as progress:
+                    while chunk := stream.read(1024 * 1024):
+                        output_file.write(chunk)
+                        progress.update(chunk.count(b"\n"))
+
+                return_code = process.wait()
+            except BaseException:
+                process.kill()
+                raise
+
+            if return_code != 0:
+                raise subprocess.CalledProcessError(return_code, command)
     except BaseException:
         output.unlink(missing_ok=True)
         raise
