@@ -28,6 +28,7 @@ from orderbook import (
 
 
 MICROSECONDS = 1_000_000
+ROW_HALF_HEIGHT = 0.44
 BACKGROUND = "#05070b"
 PANEL = BACKGROUND
 GRID = "#1b2029"
@@ -284,16 +285,23 @@ def price_text(price: int) -> str:
     return f"{yen:,}.{fraction:04d}".rstrip("0").rstrip(".")
 
 
-def depth_points(levels, row_positions):
-    """Cumulative quantity at the same vertical positions as the book rows."""
+def depth_points(levels, row_positions, direction):
+    """Draw each depth step across its book row, from best to worst price."""
+    if not levels:
+        return []
     points = []
     total = 0
-    for level in levels:
+    edge = row_positions[levels[0].price] - direction * ROW_HALF_HEIGHT
+    for index, level in enumerate(levels):
         y = row_positions[level.price]
-        if points:
-            points.append((-total, y))
         total += level.quantity
-        points.append((-total, y))
+        points.append((-total, edge))
+        if index + 1 < len(levels):
+            next_y = row_positions[levels[index + 1].price]
+            edge = (y + next_y) / 2
+        else:
+            edge = y + direction * ROW_HALF_HEIGHT
+        points.append((-total, edge))
     return points
 
 
@@ -353,7 +361,8 @@ class BookWindow:
                                       fontsize=13, family="monospace")
                 continue
             color = ASK if side == "S" else BID
-            bar = Rectangle((0, y - 0.44), 0, 0.88, facecolor=color, alpha=0.15)
+            bar = Rectangle((0, y - ROW_HALF_HEIGHT), 0, 2 * ROW_HALF_HEIGHT,
+                            facecolor=color, alpha=0.15)
             ax.add_patch(bar)
             price = ax.text(0.025, y, "", color=color, va="center", fontsize=11, family="monospace")
             quantity = ax.text(0.97, y, "", color=TEXT, ha="right", va="center", fontsize=11, family="monospace")
@@ -384,8 +393,8 @@ class BookWindow:
             bar.set_width(min(0.98, 0.98 * size / self.max_quantity))
             price.set_text(label)
             quantity.set_text(f"{size:,}" if size else "")
-        for side, levels in (("B", frame.bids), ("S", frame.asks)):
-            points = depth_points(levels, row_positions[side])
+        for side, levels, direction in (("B", frame.bids, -1), ("S", frame.asks, 1)):
+            points = depth_points(levels, row_positions[side], direction)
             self.curves[side].set_data([p[0] for p in points], [p[1] for p in points])
             polygon = [(0, points[0][1]), *points, (0, points[-1][1])] if points else []
             self.fills[side].set_verts([polygon] if polygon else [])
